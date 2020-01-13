@@ -8,7 +8,6 @@ use osmpbfreader::{groups, primitive_block_from_blob};
 
 use crate::types::{Coords, LatLon, Refs};
 use crate::types;
-use crate::utils::format_coordinate;
 
 pub(crate) fn generate_ese_ground_taxiway<P: AsRef<Path> + Copy>(source_path: P, airport_name: &str) {
     let out_path_string = format!("./out/{}.ese", airport_name);
@@ -37,7 +36,7 @@ pub(crate) fn generate_ese_ground_taxiway<P: AsRef<Path> + Copy>(source_path: P,
             //println!("{:?}", ways);
             parse_taxiway_nodes!(group, block, ways, nodes, taxiways);
         }
-        println!("{:?}", taxiways);
+        //println!("{:?}", taxiways);
         write_taxiways(out_file, airport_name, taxiways);
 
         out_file.sync_all().expect("unable to sync to file");
@@ -53,15 +52,8 @@ fn write_taxiways(out_file: &mut File, airport_name: &str, taxiways: FnvHashMap<
 
         let local_coords: Vec<&LatLon> = coordinates.iter().clone().collect();
         local_coords.iter().for_each(|latlon| {
-            let lat_str = format_coordinate(latlon.lat);
-
-            let lon_str = format_coordinate(latlon.lon);
-
-            let coordinate_string: String;
-
-            coordinate_string = format!("COORD:N{}:E{}\n", lat_str, lon_str);
             out_file
-                .write_all(coordinate_string.as_bytes())
+                .write_all(format_coordinate!(latlon.lat, latlon.lon))
                 .expect("failed to write file");
         });
     });
