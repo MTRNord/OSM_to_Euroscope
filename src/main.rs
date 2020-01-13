@@ -11,6 +11,8 @@ use crate::euroscope_ground::generate_ese_ground_taxiway;
 
 mod types;
 mod utils;
+#[macro_use]
+mod macros;
 mod euroscope_ground;
 
 fn main() {

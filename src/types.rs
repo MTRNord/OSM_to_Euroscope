@@ -4,6 +4,7 @@ pub(crate) struct LatLon {
     pub(crate) lon: f64,
 }
 
+#[derive(Copy, Clone, Debug, PartialOrd, PartialEq)]
 pub(crate) struct Node {
     pub(crate) id: i64,
     pub(crate) lat: f64,

@@ -1,10 +1,10 @@
 use std::fs;
 use std::fs::File;
-use std::io::Write;
+use std::io::{BufReader, Write};
 use std::path::Path;
 
 use fnv::FnvHashMap;
-use osmpbf::*;
+use osmpbfreader::{groups, primitive_block_from_blob};
 
 use crate::types::{Coords, LatLon, Refs};
 use crate::types;
@@ -21,12 +21,27 @@ pub(crate) fn generate_ese_ground_taxiway<P: AsRef<Path> + Copy>(source_path: P,
     out_file
         .write_all(b"[GROUND]\n")
         .expect("failed to write file");
-    let taxiways = get_taxiways(source_path);
 
-    let coords = get_taxiways_coords(source_path, taxiways);
-    write_taxiways(out_file, airport_name, coords);
+    let file = File::open(source_path).expect("unable to open file");
+    let buf_reader = BufReader::new(file);
+    let mut pbf = osmpbfreader::OsmPbfReader::new(buf_reader);
 
-    out_file.sync_all().expect("unable to sync to file");
+    for block in pbf.blobs().map(|b| primitive_block_from_blob(&b.unwrap())) {
+        let block: osmpbfreader::osmformat::PrimitiveBlock = block.unwrap();
+
+        let mut nodes: Vec<types::Node> = Vec::new();
+        let mut ways: FnvHashMap<String, Refs> = FnvHashMap::default();
+        let mut taxiways: FnvHashMap<String, Coords> = FnvHashMap::default();
+        for group in block.get_primitivegroup().iter() {
+            parse_taxiway!(group, block, ways);
+            //println!("{:?}", ways);
+            parse_taxiway_nodes!(group, block, ways, nodes, taxiways);
+        }
+        println!("{:?}", taxiways);
+        write_taxiways(out_file, airport_name, taxiways);
+
+        out_file.sync_all().expect("unable to sync to file");
+    }
 }
 
 fn write_taxiways(out_file: &mut File, airport_name: &str, taxiways: FnvHashMap<String, Coords>) {
@@ -50,74 +65,4 @@ fn write_taxiways(out_file: &mut File, airport_name: &str, taxiways: FnvHashMap<
                 .expect("failed to write file");
         });
     });
-}
-
-fn get_taxiways_coords<P: AsRef<Path> + Copy>(
-    path: P,
-    refs: FnvHashMap<String, Refs>,
-) -> FnvHashMap<String, Coords> {
-    let mut taxiways: FnvHashMap<String, Coords> = FnvHashMap::default();
-    let mut nodes: Vec<types::Node> = Vec::new();
-
-    let reader = ElementReader::from_path(path).unwrap();
-    reader
-        .for_each(|element| {
-            if let Element::DenseNode(node) = element {
-                let new_node = types::Node {
-                    id: node.id,
-                    lat: node.lat(),
-                    lon: node.lon(),
-                };
-                nodes.push(new_node);
-            }
-        })
-        .unwrap();
-
-    for (key, val) in refs.iter() {
-        val.iter().for_each(|refval| {
-            if let Some(node) = nodes.iter().find(|x| x.id == *refval) {
-                let lat_lon = LatLon {
-                    lat: node.lat,
-                    lon: node.lon,
-                };
-
-                if taxiways.contains_key(key.as_str()) {
-                    (*(taxiways.get_mut(key.as_str()).unwrap())).push(lat_lon);
-                } else {
-                    let mut coords: Coords = Vec::new();
-                    coords.push(lat_lon);
-                    taxiways.insert(key.clone(), coords);
-                }
-            }
-        })
-    }
-
-    taxiways
-}
-
-fn get_taxiways<P: AsRef<Path> + Copy>(path: P) -> FnvHashMap<String, Refs> {
-    let mut taxiways: FnvHashMap<String, Refs> = FnvHashMap::default();
-
-    let reader = ElementReader::from_path(path).unwrap();
-    reader
-        .for_each(|element| {
-            if let Element::Way(way) = element {
-                if way
-                    .tags()
-                    .any(|(key, value)| key == "aeroway" && value == "taxiway")
-                {
-                    if let Some((_, value)) = way.tags().find(|(key, _)| *key == "ref") {
-                        let mut new_vals = way.refs().collect::<Vec<i64>>();
-
-                        if taxiways.contains_key(value) {
-                            taxiways.get_mut(value).unwrap().append(&mut new_vals);
-                        } else {
-                            taxiways.insert(value.to_string(), new_vals);
-                        }
-                    }
-                }
-            }
-        })
-        .unwrap();
-    taxiways
 }
